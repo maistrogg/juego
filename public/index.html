@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>CardFu!</title>
+		<link rel="stylesheet" type="text/css" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css">
+		<link rel="stylesheet" type="text/css" href="stylesheets/style.css">
+		<link rel="shortcut icon" type="image/png" href="/images/cardfu_favicon.png"/>
+		<meta name=viewport content="width=device-width, initial-scale=1">
+	</head>
+
+	<body>
+		<div id="content">
+			<canvas id="game-canvas" class="center-block" width="0" height="0"></canvas>
+
+			<div class="play-guide">
+				<h1>Como jugar</h1>
+				<p>Card Fu es un sencillo juego de cartas de estrategia basado en el minijuego Card-Jitsu de Club Penguin. Las reglas son bastante simples, es solo una versión un poco más avanzada de Piedra, Papel y Tijera. En tu mano tienes cinco cartas, cada una con un elemento, un poder y un color. En cada ronda juegas una carta y si ganas la ronda, obtienes la carta que jugaste como punto. Tu carta gana la ronda si tiene el elemento que vence a la carta de tu oponente (el agua vence al fuego, el fuego vence al hielo, el hielo vence al agua) o, si juegas el mismo tipo de elemento, si tienes el poder mayor. Para ganar el juego, debes acumular un mínimo de tres puntos, donde todos los elementos y colores son únicos, o donde los elementos son iguales, pero los colores son únicos..</p>
+				<h3>TIPS</h3>
+				<ul>
+					<li>¡Conoce a tu enemigo! La clave para ganar un juego de Card Fu es saber qué es probable que juegue tu oponente. Esté siempre atento a qué tipo de carta necesita su oponente para ganar o qué estrategia está utilizando.</li>
+					<li>¡Juegos de contraataque! Antes de realizar el contraataque perfecto al movimiento ganador de tu oponente, tómate un momento para pensar en el hecho de que tu oponente muy bien podría esperar que hagas esto y ten planeada una jugada para contrarrestar tu contrajuego. ¡Es posible que incluso hayan previsto su triple contador!</li>
+					<li>¡No lo pienses demasiado! Cuando estés sentado allí, preguntándote si tu oponente está haciendo un farol triple o incluso un farol cuádruple, podría ser una buena idea elegir simplemente la jugada obvia.</li>
+				</ul>
+			</div>
+		</div>
+
+		<!-- Global site tag (gtag.js) - Google Analytics -->
+		<script async src="https://www.googletagmanager.com/gtag/js?id=UA-73558830-9"></script>
+		<script>
+		  window.dataLayer = window.dataLayer || [];
+		  function gtag(){dataLayer.push(arguments);}
+		  gtag('js', new Date());
+
+		  gtag('config', 'UA-73558830-9');
+		</script>
+
+		<script src="https://code.jquery.com/jquery-2.2.2.min.js" integrity="sha256-36cp2Co+/62rEAAYHLmRCPIych47CvdM+uTBJwSzWjI=" crossorigin="anonymous"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/js-cookie/2.1.0/js.cookie.js"></script>
+		<script src="/socket.io/socket.io.js"></script>
+		<script src="javascripts/game_client.js" type="text/javascript"></script>
+		<script src="javascripts/canvas.js" type="text/javascript"></script>
+		<script src="javascripts/konami.js" type="text/javascript"></script>
+	</body>
+</html>
