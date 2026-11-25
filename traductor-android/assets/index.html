@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Intérprete</title>
+<style>
+/* Layout: one-screen interpreter booth: header + tabs, scrolling transcript feed, input dock pinned at the bottom. */
+:root {
+  --bg: #EEF3F4; --surface: #FFFFFF; --ink: #12222A; --muted: #5B6C74; --line: #D6E0E3;
+  --accent: #0A7468; --accent-ink: #FFFFFF; --accent-soft: #DAEFEC;
+  --live: #CF3B26; --live-soft: #FBE4DF; --live-ink: #FFFFFF;
+  --f-body: system-ui, Roboto, "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK KR", "Noto Sans CJK SC", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0D1518; --surface: #162126; --ink: #E4EDEF; --muted: #92A4AB; --line: #25343A;
+    --accent: #34C9B6; --accent-ink: #062521; --accent-soft: #123A36;
+    --live: #FF6F5C; --live-soft: #3B1C17; --live-ink: #2A0B06;
+    color-scheme: dark;
+  }
+}
+html { height: 100%; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.45; padding: 0 16px; }
+button, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.app { height: 100%; max-width: 720px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+.top, .dock, .dock section, .feed { min-width: 0; }
+
+.top { display: flex; flex-direction: column; gap: 12px; padding: 14px 0 10px; }
+.brand { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.brand h1 { margin: 0; font-size: 1.4rem; font-weight: 700; letter-spacing: -0.01em; }
+.brand h1 b { color: var(--accent); }
+.brand p { margin: 2px 0 0; color: var(--muted); font-size: 0.78rem; }
+.ghost { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 0.8rem; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ghost.armed { color: var(--live); border-color: var(--live); }
+
+.tabs { display: grid; grid-template-columns: repeat(2, 1fr); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px; gap: 4px; }
+.tab { border: 0; background: none; border-radius: 9px; padding: 9px 6px; font-weight: 600; font-size: 0.92rem; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.tab[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
+.tab svg { width: 18px; height: 18px; }
+
+.feed { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 6px 0 16px; overscroll-behavior: contain; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.card.example { opacity: 0.85; border-style: dashed; }
+.card.live { border-color: var(--live); background: var(--live-soft); }
+.card.is-error { border-color: var(--live); }
+.meta { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--muted); }
+.badge { font-weight: 600; letter-spacing: 0.08em; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 1px 6px; }
+.live .badge { color: var(--live); background: var(--surface); }
+.tag { text-transform: uppercase; letter-spacing: 0.08em; border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; }
+.time { margin-left: auto; font-variant-numeric: tabular-nums; }
+.orig { margin: 0; color: var(--muted); font-size: 0.95rem; overflow-wrap: anywhere; white-space: pre-wrap; }
+.reading { margin: -2px 0 0; color: var(--muted); font-size: 0.8rem; font-style: italic; overflow-wrap: anywhere; }
+.tr { margin: 0; font-size: 1.18rem; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; white-space: pre-wrap; }
+.tr.pending { color: var(--muted); font-weight: 500; font-size: 0.95rem; }
+.tr.provisional { color: var(--ink); opacity: 0.75; }
+.err { margin: 0; color: var(--live); font-size: 0.9rem; }
+.live .orig { color: var(--ink); font-size: 1.05rem; }
+.caret::after { content: ""; display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -0.15em; background: var(--live); animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.act { background: none; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 0.8rem; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+.act svg { width: 14px; height: 14px; }
+.dots::after { content: "…"; animation: blink 1.2s steps(2) infinite; }
+
+.dock { border-top: 1px solid var(--line); padding: 10px 0 14px; display: flex; flex-direction: column; gap: 10px; }
+.dock section { display: flex; flex-direction: column; gap: 10px; }
+.note { margin: 0; font-size: 0.85rem; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.note button { flex: none; border: 1px solid var(--accent); color: var(--accent); background: none; border-radius: 8px; padding: 4px 10px; font-size: 0.8rem; font-weight: 600; }
+.chips-label { margin: 0; font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; display: inline-flex; flex-direction: column; align-items: center; line-height: 1.15; }
+.chip .n { font-weight: 600; font-size: 0.9rem; }
+.chip .es { font-size: 0.68rem; color: var(--muted); }
+.chip[aria-checked="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.chip[aria-checked="true"] .es { color: var(--accent-ink); opacity: 0.8; }
+
+.mic { position: relative; width: 100%; min-height: 60px; border: 0; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 1.05rem; display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.mic svg { width: 24px; height: 24px; }
+.mic[data-state="listening"], .mic[data-state="starting"] { background: var(--live); color: var(--live-ink); }
+.mic[data-state="listening"]::before { content: ""; position: absolute; inset: -4px; border-radius: inherit; border: 2px solid var(--live); animation: pulse 1.6s ease-out infinite; }
+@keyframes pulse { 0% { opacity: 0.9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.06, 1.25); } }
+.mic:disabled { background: var(--line); color: var(--muted); }
+.hint { margin: 0; text-align: center; font-size: 0.78rem; color: var(--muted); }
+
+textarea { width: 100%; resize: none; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 10px 12px; min-height: 76px; max-height: 30vh; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; min-height: 50px; padding: 10px 14px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .caret::after, .dots::after, .mic[data-state="listening"]::before { animation: none; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></symbol>
+  <symbol id="i-say" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></symbol>
+  <symbol id="i-retry" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div>
+        <h1>Intérprete <b>→ Español</b></h1>
+        <p>Inglés · Japonés · Coreano · Chino · Ruso · Alemán</p>
+      </div>
+      <button class="ghost" id="clear" type="button"><svg width="14" height="14"><use href="#i-trash"/></svg><span>Borrar</span></button>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Modo">
+      <button class="tab" role="tab" data-mode="voz" type="button"><svg><use href="#i-mic"/></svg>Voz en vivo</button>
+      <button class="tab" role="tab" data-mode="texto" type="button"><svg><use href="#i-text"/></svg>Texto</button>
+    </div>
+  </header>
+
+  <main class="feed" id="feed" aria-live="polite"></main>
+
+  <footer class="dock">
+    <div class="note" id="note" hidden><span id="note-text"></span><button id="note-btn" type="button" hidden></button></div>
+
+    <section data-panel="voz">
+      <p class="chips-label" id="chips-label">Idioma que están hablando</p>
+      <div class="chips" id="chips" role="radiogroup" aria-labelledby="chips-label"></div>
+      <button class="mic" id="mic" type="button" data-state="idle">
+        <svg><use id="mic-icon" href="#i-mic"/></svg><span id="mic-label">Escuchar</span>
+      </button>
+      <p class="hint" id="mic-hint">Pon el celular cerca de quien habla. Ves la traducción mientras hablan.</p>
+    </section>
+
+    <section data-panel="texto" hidden>
+      <label class="sr" for="txt">Texto a traducir</label>
+      <textarea id="txt" rows="3" placeholder="Pega o escribe texto en cualquier idioma…"></textarea>
+      <button class="btn primary" id="go" type="button">Traducir al español</button>
+    </section>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (s) { return document.querySelector(s); };
+  var A = window.Android || {
+    speechAvailable: function () { return false; }, startListening: function () {}, stopListening: function () {},
+    translate: function () {}, speak: function () { return false; }, stopSpeaking: function () {}, copy: function () {}, openTtsSettings: function () {}
+  };
+
+  var LANGS = [
+    { code: "en", es: "Inglés", native: "English" },
+    { code: "ja", es: "Japonés", native: "日本語" },
+    { code: "ko", es: "Coreano", native: "한국어" },
+    { code: "zh", es: "Chino", native: "中文" },
+    { code: "ru", es: "Ruso", native: "Русский" },
+    { code: "de", es: "Alemán", native: "Deutsch" },
+    { code: "fr", es: "Francés", native: "Français" },
+    { code: "pt", es: "Portugués", native: "Português" },
+    { code: "it", es: "Italiano", native: "Italiano" }
+  ];
+  var MODE_LABEL = { voz: "Voz", texto: "Texto" };
+
+  var store = {
+    get: function (k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+    set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  };
+
+  var state = { mode: store.get("int.mode", "voz"), lang: store.get("int.lang", "ja"), entries: store.get("int.entries", []) };
+  if (!MODE_LABEL[state.mode]) state.mode = "voz";
+  if (!LANGS.some(function (l) { return l.code === state.lang; })) state.lang = "ja";
+  state.entries = (Array.isArray(state.entries) ? state.entries : []).filter(function (e) { return e && typeof e === "object" && e.id; }).map(function (e) {
+    if (e.status === "pending") { e.status = "error"; e.error = "Se interrumpió antes de terminar."; }
+    return e;
+  });
+
+  function save() { state.entries = state.entries.slice(-80); store.set("int.entries", state.entries); }
+  function langCode(v) { var m = /^[a-z]{2}/.exec(String(v || "").toLowerCase()); return m ? m[0] : ""; }
+  function curLang() { return LANGS.filter(function (l) { return l.code === state.lang; })[0]; }
+  function now() { try { return new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } }
+  function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+  function icon(id) { var s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); var u = document.createElementNS("http://www.w3.org/2000/svg", "use"); u.setAttribute("href", "#" + id); s.appendChild(u); return s; }
+
+  /* ---------- Notes ---------- */
+  var noteEl = $("#note"), noteText = $("#note-text"), noteBtn = $("#note-btn"), noteFn = null;
+  function setNote(t, label, fn) {
+    noteText.textContent = t || ""; noteEl.hidden = !t;
+    noteFn = fn || null; noteBtn.hidden = !fn; noteBtn.textContent = label || "";
+  }
+  noteBtn.addEventListener("click", function () { if (noteFn) noteFn(); });
+
+  /* ---------- Translation jobs ---------- */
+  var pending = {};   // id -> {resolve, reject}
+  var seq = 0;
+  function translate(text, src) {
+    return new Promise(function (res, rej) {
+      var id = "t" + (++seq);
+      pending[id] = { res: res, rej: rej };
+      try { A.translate(id, text, src || ""); } catch (e) { delete pending[id]; rej("other"); }
+    });
+  }
+  function errCopy(code) {
+    if (code === "rate") return "Demasiadas traducciones seguidas. Espera un momento y toca Reintentar.";
+    if (code === "network") return "Sin conexión a internet. Revisa tu conexión y toca Reintentar.";
+    return "No se pudo traducir. Toca Reintentar.";
+  }
+
+  /* ---------- Feed ---------- */
+  var feed = $("#feed"), nodes = new Map(), jobs = new Map(), liveCard = null;
+
+  var EXAMPLES = [
+    { id: "x1", example: true, mode: "voz", lang: "ja", original: "すみません、駅はどこですか？", reading: "Sumimasen, eki wa doko desu ka?", translation: "Disculpe, ¿dónde está la estación?", status: "done" },
+    { id: "x2", example: true, mode: "voz", lang: "ko", original: "지금 몇 시예요?", reading: "Jigeum myeot si-yeyo?", translation: "¿Qué hora es ahora?", status: "done" },
+    { id: "x3", example: true, mode: "texto", lang: "ru", original: "Спасибо, было очень вкусно!", reading: "Spasibo, bylo ochen' vkusno!", translation: "¡Gracias, estuvo muy rico!", status: "done" }
+  ];
+
+  function actBtn(iconId, label) { var b = el("button", "act"); b.type = "button"; b.append(icon(iconId), el("span", null, label)); return b; }
+
+  function speak(text) {
+    if (dState !== "idle") { setNote("Detén el micrófono para escuchar la traducción."); return; }
+    var ok = false;
+    try { ok = A.speak(text); } catch (e) {}
+    if (!ok) setNote("Tu celular no tiene una voz en español instalada.", "Instalar voz", function () { A.openTtsSettings(); setNote(""); });
+  }
+
+  function build(e) {
+    var card = el("article", "card" + (e.example ? " example" : "") + (e.status === "error" ? " is-error" : ""));
+    var meta = el("div", "meta");
+    meta.append(el("span", "badge", (e.lang || "··").toUpperCase()), el("span", null, MODE_LABEL[e.mode] || ""));
+    if (e.example) meta.append(el("span", "tag", "Ejemplo"));
+    meta.append(el("span", "time", e.time || ""));
+    card.append(meta);
+    if (e.original) { var o = el("p", "orig", e.original); if (e.lang) o.lang = e.lang; card.append(o); }
+    if (e.reading) card.append(el("p", "reading", e.reading));
+    if (e.status === "pending") card.append(el("p", "tr pending dots", "Traduciendo"));
+    else if (e.status === "error") card.append(el("p", "err", e.error || "No se pudo traducir."));
+    else if (e.translation) { var t = el("p", "tr", e.translation); t.lang = "es"; card.append(t); }
+
+    var actions = el("div", "actions");
+    if (e.status === "done" && e.translation) {
+      var c = actBtn("i-copy", "Copiar");
+      c.addEventListener("click", function () {
+        try { A.copy(e.translation); } catch (x) {}
+        var l = c.querySelector("span"); l.textContent = "Copiado"; setTimeout(function () { l.textContent = "Copiar"; }, 1400);
+      });
+      var s = actBtn("i-say", "Escuchar");
+      s.addEventListener("click", function () { speak(e.translation); });
+      actions.append(c, s);
+    }
+    if (e.status === "error" && jobs.has(e.id)) {
+      var r = actBtn("i-retry", "Reintentar");
+      r.addEventListener("click", function () { var j = jobs.get(e.id); if (j) j(); });
+      actions.append(r);
+    }
+    if (actions.childNodes.length) card.append(actions);
+    return card;
+  }
+
+  function nearBottom() { return feed.scrollHeight - feed.scrollTop - feed.clientHeight < 140; }
+  function scrollEnd() { requestAnimationFrame(function () { feed.scrollTop = feed.scrollHeight; }); }
+
+  function renderAll() {
+    feed.replaceChildren(); nodes.clear();
+    (state.entries.length ? state.entries : EXAMPLES).forEach(function (e) { var n = build(e); nodes.set(e.id, n); feed.append(n); });
+    if (liveCard) feed.append(liveCard);
+    scrollEnd();
+  }
+
+  function update(e) {
+    var stick = nearBottom();
+    var old = nodes.get(e.id), n = build(e);
+    nodes.set(e.id, n);
+    if (old && old.parentNode) old.replaceWith(n);
+    else if (liveCard && liveCard.parentNode) feed.insertBefore(n, liveCard);
+    else feed.append(n);
+    if (stick) scrollEnd();
+  }
+
+  function newEntry(fields) {
+    if (!state.entries.length) { feed.replaceChildren(); nodes.clear(); if (liveCard) feed.append(liveCard); }
+    var e = Object.assign({ id: "e" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), time: now(), status: "pending" }, fields);
+    state.entries.push(e);
+    return e;
+  }
+
+  function runJob(e, src) {
+    var exec = function () {
+      e.status = "pending"; e.error = ""; update(e);
+      translate(e.original, src).then(function (r) {
+        e.translation = String(r.translation || "").trim();
+        e.reading = String(r.reading || "").trim();
+        var d = langCode(r.detected); if (d) e.lang = d;
+        if (e.lang === "es" || e.reading === e.original) e.reading = "";
+        e.status = "done"; jobs.delete(e.id); update(e); save();
+      }, function (code) {
+        e.status = "error"; e.error = errCopy(code); update(e); save();
+      });
+    };
+    jobs.set(e.id, exec);
+    exec();
+  }
+
+  function addVoice(text) { runJob(newEntry({ mode: "voz", lang: state.lang, original: text }), state.lang); }
+  function addText(text) { runJob(newEntry({ mode: "texto", lang: "", original: text }), ""); }
+
+  /* ---------- Tabs ---------- */
+  function renderPanels() {
+    document.querySelectorAll(".tab").forEach(function (t) { t.setAttribute("aria-selected", t.dataset.mode === state.mode ? "true" : "false"); });
+    document.querySelectorAll("[data-panel]").forEach(function (p) { p.hidden = p.dataset.panel !== state.mode; });
+  }
+  document.querySelectorAll(".tab").forEach(function (t) {
+    t.addEventListener("click", function () {
+      state.mode = t.dataset.mode; store.set("int.mode", state.mode); setNote(""); renderPanels();
+      if (state.mode === "texto") $("#txt").focus();
+    });
+  });
+
+  /* ---------- Chips ---------- */
+  var chips = $("#chips");
+  function renderChips() {
+    chips.replaceChildren();
+    LANGS.forEach(function (l) {
+      var b = el("button", "chip"); b.type = "button"; b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", l.code === state.lang ? "true" : "false");
+      var n = el("span", "n", l.native); n.lang = l.code;
+      b.append(n, el("span", "es", l.es));
+      b.addEventListener("click", function () {
+        if (l.code === state.lang) return;
+        state.lang = l.code; store.set("int.lang", state.lang); renderChips(); renderMic();
+        if (dState !== "idle") { finishLive(); A.startListening(state.lang); }
+      });
+      chips.append(b);
+      if (l.code === state.lang) setTimeout(function () { try { b.scrollIntoView({ inline: "center", block: "nearest" }); } catch (x) {} }, 0);
+    });
+  }
+
+  /* ---------- Live voice ---------- */
+  var dState = "idle", partial = "", liveTr = "", liveTimer = 0, liveSeq = 0;
+  var mic = $("#mic"), micLabel = $("#mic-label"), micIcon = $("#mic-icon");
+
+  function renderMic() {
+    mic.dataset.state = dState;
+    var name = curLang().es.toLowerCase();
+    micIcon.setAttribute("href", dState === "idle" ? "#i-mic" : "#i-stop");
+    micLabel.textContent = dState === "idle" ? "Escuchar " + name : dState === "starting" ? "Conectando…" : "Escuchando " + name + " · Detener";
+  }
+
+  function showLive() {
+    var listening = dState !== "idle";
+    if (!partial && !listening) { if (liveCard) { liveCard.remove(); liveCard = null; } return; }
+    var stick = nearBottom();
+    if (!liveCard) liveCard = el("article", "card live");
+    liveCard.replaceChildren();
+    var meta = el("div", "meta");
+    meta.append(el("span", "badge", state.lang.toUpperCase()), el("span", null, "En vivo"));
+    liveCard.append(meta);
+    var o = el("p", "orig caret", partial || (dState === "starting" ? "Conectando el micrófono" : "Escuchando… habla cerca del celular"));
+    if (partial) o.lang = state.lang; else o.style.color = "var(--muted)";
+    liveCard.append(o);
+    if (partial && liveTr) { var t = el("p", "tr provisional", liveTr); t.lang = "es"; liveCard.append(t); }
+    if (!liveCard.parentNode) feed.append(liveCard);
+    if (stick) scrollEnd();
+  }
+
+  function liveTranslate() {
+    clearTimeout(liveTimer);
+    var text = partial, my = ++liveSeq;
+    if (!text) return;
+    liveTimer = setTimeout(function () {
+      translate(text, state.lang).then(function (r) {
+        if (my !== liveSeq || !partial) return;
+        liveTr = String(r.translation || ""); showLive();
+      }, function () {});
+    }, 450);
+  }
+
+  function finishLive() {
+    clearTimeout(liveTimer); liveSeq++;
+    var t = partial.trim(); partial = ""; liveTr = "";
+    if (t) addVoice(t);
+    showLive();
+  }
+
+  function reasonCopy(r) {
+    var name = curLang().es.toLowerCase();
+    switch (r) {
+      case "stopped": case null: case undefined: return "";
+      case "hidden": return "Se pausó porque saliste de la app. Toca el botón para seguir.";
+      case "not_granted": return "Necesito permiso para usar el micrófono. Actívalo en Ajustes › Apps › Intérprete › Permisos.";
+      case "no_service": return "Tu celular no tiene el reconocimiento de voz de Google. Instala o actualiza la app «Google» desde Play Store.";
+      case "unavailable": return "Tu celular no tiene el reconocimiento de voz en " + name + ". Agrégalo en la app Google › Ajustes › Voz › Idiomas, o prueba otro idioma.";
+      case "network": return "Sin conexión a internet. Revisa tu conexión y vuelve a intentar.";
+      case "audio": return "No pude usar el micrófono. Cierra otras apps que lo estén usando.";
+      default: return "Falló el reconocimiento de voz. Toca el botón para intentar de nuevo.";
+    }
+  }
+
+  mic.addEventListener("click", function () {
+    if (dState !== "idle") { A.stopListening(); return; }
+    setNote("");
+    try { A.stopSpeaking(); } catch (e) {}
+    A.startListening(state.lang);
+  });
+
+  /* ---------- Text mode ---------- */
+  var txt = $("#txt");
+  function submitText() {
+    var t = txt.value.trim();
+    if (!t) { txt.focus(); return; }
+    txt.value = ""; txt.blur(); addText(t.slice(0, 15000));
+  }
+  $("#go").addEventListener("click", submitText);
+
+  /* ---------- Clear ---------- */
+  var clearBtn = $("#clear"), clearArmed = 0;
+  clearBtn.addEventListener("click", function () {
+    var label = clearBtn.querySelector("span");
+    if (!clearArmed) {
+      clearBtn.classList.add("armed"); label.textContent = "¿Borrar todo?";
+      clearArmed = setTimeout(function () { clearArmed = 0; clearBtn.classList.remove("armed"); label.textContent = "Borrar"; }, 3000);
+      return;
+    }
+    clearTimeout(clearArmed); clearArmed = 0; clearBtn.classList.remove("armed"); label.textContent = "Borrar";
+    state.entries = []; jobs.clear(); save(); renderAll();
+  });
+
+  /* ---------- Native callbacks ---------- */
+  window.App = {
+    onPartial: function (t) { partial = String(t || ""); showLive(); liveTranslate(); },
+    onFinal: function (t) { var s = String(t || "").trim(); if (s) partial = s; finishLive(); },
+    onState: function (s, reason) {
+      dState = s === "listening" || s === "starting" ? s : "idle";
+      renderMic();
+      if (dState === "idle") { finishLive(); var m = reasonCopy(reason); if (m) setNote(m); }
+      showLive();
+    },
+    onTranslated: function (id, r) { var p = pending[id]; if (p) { delete pending[id]; p.res(r || {}); } },
+    onTranslateError: function (id, code) { var p = pending[id]; if (p) { delete pending[id]; p.rej(code); } },
+    addExternalText: function (t) {
+      state.mode = "texto"; store.set("int.mode", state.mode); renderPanels();
+      addText(String(t).slice(0, 15000)); scrollEnd();
+    }
+  };
+
+  /* ---------- Boot ---------- */
+  renderChips(); renderPanels(); renderMic(); renderAll();
+  try { if (window.Android && !A.speechAvailable()) setNote(reasonCopy("no_service")); } catch (e) {}
+})();
+</script>
+</body>
+</html>
